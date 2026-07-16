@@ -338,7 +338,7 @@ folium.Map.add_ee_layer = add_ee_layer
 def satCollection(cloudRate, initialDate, updatedDate, aoi):
     try:
         collection = (
-            ee.ImageCollection('COPERNICUS/S2_SR')
+            ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
             .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloudRate))
             .filterDate(initialDate, updatedDate)
             .filterBounds(aoi)
