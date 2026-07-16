@@ -5,3 +5,6 @@ __pycache__/
 
 # VSCode
 .vscode/
+
+# Streamlit secrets
+.streamlit/secrets.toml

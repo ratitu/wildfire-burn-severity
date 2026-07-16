@@ -7,6 +7,7 @@ License: GPL-3.0 (See LICENSE file for details)
 import streamlit as st
 import ee
 from ee import oauth
+from ee.ee_exception import EEException
 from google.oauth2 import service_account
 import folium
 from streamlit_folium import folium_static, st_folium
@@ -320,7 +321,13 @@ def show_error_dialog(messages):
 
 # Earth Engine drawing method setup
 def add_ee_layer(self, ee_image_object, vis_params, name):
-    map_id_dict = ee.Image(ee_image_object).getMapId(vis_params)
+    try:
+        map_id_dict = ee.Image(ee_image_object).getMapId(vis_params)
+    except EEException as e:
+        if "memory limit" in str(e).lower():
+            st.warning(f"Layer '{name}' skipped — area too large for GEE free tier. Try a smaller AOI.")
+            return
+        raise
     layer = folium.raster_layers.TileLayer(
         tiles=map_id_dict['tile_fetcher'].url_format,
         attr='Map Data &copy; <a href="https://earthengine.google.com/">Google Earth Engine</a>',
