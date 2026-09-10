@@ -775,9 +775,17 @@ def parse_topojson(upload_file):
         return [], f"Error processing TopoJSON file: {str(e)}"
 
 
+def _ensure_ee_initialized():
+    # Idempotent: Earth Engine client already initialized -> nothing to do.
+    if ee.data.is_initialized():
+        return
+    ee_authenticate()
+
+
 # Main Upload Function
 last_uploaded_centroid = None
 def upload_files_proc(upload_files):
+    _ensure_ee_initialized()
     # A global variable to track the latest geojson uploaded
     global last_uploaded_centroid
     # Setting up a variable that takes all polygons/geometries within the same/different geojson
