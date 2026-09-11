@@ -11,6 +11,7 @@ from ee.ee_exception import EEException
 from google.oauth2 import service_account
 import folium
 from streamlit_folium import folium_static, st_folium
+import math
 from branca.element import Template, MacroElement, Figure, Element
 from folium.utilities import escape_backticks
 from streamlit_elements import elements, mui
@@ -909,7 +910,7 @@ def calculate_class_area(classified_image, geometry_aoi, class_value):
 # Geojson Area calculation function
 def geojson_area(aoi):
     # geojson area: (geometry area)
-    aoi_area_sqm = aoi.area()
+    aoi_area_sqm = aoi.area(maxError=1)
     # Convert the area to square kilometers
     aoi_area_info = aoi_area_sqm.getInfo()/1e6
     aoi_area_rounded = round(aoi_area_info, 4)
@@ -953,6 +954,46 @@ def main():
 
     #### User input section - START
     # columns for input - map
+    ## Area of Interest source
+    aoi_source = st.radio(
+        "Area of Interest source",
+        ["📁 Upload file", "📍 Pick point on map"],
+        horizontal=True,
+        key="aoi_source",
+    )
+
+    if aoi_source == "📍 Pick point on map":
+        st.info("Click a point on the map — the AOI will be a 10 km × 10 km square centered on it.")
+        picker_m = folium.Map(location=[36.60, 16.00], tiles=None, zoom_start=5, control_scale=True, attributionControl=0)
+        picker_osm = folium.TileLayer("OpenStreetMap", name="Open Street Map", attr="OSM")
+        picker_osm.add_to(picker_m)
+        try:
+            picker_mapbox_api = st.secrets["mapbox_token"]
+            picker_mapbox_url = f"https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/{{z}}/{{x}}/{{y}}?access_token={picker_mapbox_api}"
+            folium.TileLayer(tiles=picker_mapbox_url, attr="Mapbox", name="Mapbox Dark", overlay=False, control=True, max_zoom=20, min_zoom=1).add_to(picker_m)
+        except KeyError:
+            pass
+        clicked_point = st.session_state.get("aoi_click_point")
+        if clicked_point is not None:
+            picked_lat, picked_lon = clicked_point
+            folium.Marker([picked_lat, picked_lon], tooltip="Selected point (10 km square AOI)").add_to(picker_m)
+            dlat = 5000 / 111320.0
+            dlon = 5000 / (111320.0 * math.cos(math.radians(picked_lat)))
+            square = [
+                [picked_lat - dlat, picked_lon - dlon],
+                [picked_lat - dlat, picked_lon + dlon],
+                [picked_lat + dlat, picked_lon + dlon],
+                [picked_lat + dlat, picked_lon - dlon],
+                [picked_lat - dlat, picked_lon - dlon],
+            ]
+            folium.Polygon(square, color="white", weight=2, fill=True, fill_opacity=0.1, tooltip="AOI (10 km square)").add_to(picker_m)
+        picker_result = st_folium(picker_m, use_container_width=True, height=400, key="aoi_point_picker")
+        clicked = None
+        if picker_result is not None:
+            clicked = picker_result.get("last_clicked") if hasattr(picker_result, "get") else getattr(picker_result, "last_clicked", None)
+        if clicked is not None:
+            st.session_state.aoi_click_point = (clicked["lat"], clicked["lng"])
+
     with st.form("input_form"):
         c1, c2 = st.columns([3, 1])
 
@@ -966,8 +1007,16 @@ def main():
                 # User input GeoJSON file
                 st.info("Upload Area Of Interest file:")
                 upload_files = st.file_uploader("Crete a GeoJSON file at: [geojson.io](https://geojson.io/)", accept_multiple_files=True)
-                # calling upload files function
-                geometry_aoi = upload_files_proc(upload_files)
+                # AOI: picked point -> 10 km square; otherwise uploaded file / default
+                if aoi_source == "📍 Pick point on map":
+                    if st.session_state.get("aoi_click_point") is not None:
+                        picked_lat, picked_lon = st.session_state.aoi_click_point
+                        geometry_aoi = ee.Geometry.Point([picked_lon, picked_lat]).buffer(5000).bounds()
+                    else:
+                        st.warning("No point picked on the map yet — using uploaded file / default AOI.")
+                        geometry_aoi = upload_files_proc(upload_files)
+                else:
+                    geometry_aoi = upload_files_proc(upload_files)
 
             ## Accessibility: Color palette input
                 st.info("Custom Color Palettes")
@@ -1036,6 +1085,10 @@ def main():
             if last_uploaded_centroid is not None:
                 latitude = last_uploaded_centroid[1]
                 longitude = last_uploaded_centroid[0]
+                m = folium.Map(location=[latitude, longitude], tiles=None, zoom_start=11, control_scale=True, attributionControl=0)
+            elif aoi_source == "📍 Pick point on map" and st.session_state.get("aoi_click_point") is not None:
+                latitude = st.session_state.aoi_click_point[0]
+                longitude = st.session_state.aoi_click_point[1]
                 m = folium.Map(location=[latitude, longitude], tiles=None, zoom_start=11, control_scale=True, attributionControl=0)
             else:
                 latitude=36.60
